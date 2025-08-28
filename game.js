@@ -23,12 +23,60 @@ const activeAirports = {
 
 const SWEEP_INTERVAL_MS = 2000;
 
+const ISA_TEMP_C = 15;      // Standard temperature at sea level (Celsius)
+const ISA_LAPSE_RATE_C = 1.98; // Temp drop per 1000 ft (Celsius)
+const ISA_PRESSURE_HPA = 1013.25; // Standard pressure at sea level (hPa)
+const seaLevelDensity = 1.225; // Standard air density at sea level (kg/m^3)
+
+let windDirection = 270; // Wind from 240 degrees
+let windSpeed = 15;      // 15 knots
+
+// in CORE SIMULATION CONFIGURATION section
+
+const AIRCRAFT_PERFORMANCE  = {
+  // L - Light (e.g., Cirrus SR22T)
+  "L": {
+    turnRate: 3.5,            // Degrees per second
+    climbRate: 1800,          // Feet per minute
+    descentRate: 2000,        // Feet per minute
+    accelerationRate: 4.0,    // Knots per second
+    decelerationRate: 3.0     // Knots per second
+  },
+  // M - Medium (e.g., Boeing 737)
+  "M": {
+    turnRate: 3.0,
+    climbRate: 2200,
+    descentRate: 2500,
+    accelerationRate: 3.0,
+    decelerationRate: 2.0
+  },
+  // H - Heavy (e.g., Boeing 747-400)
+  "H": {
+    turnRate: 2.5,
+    climbRate: 1500,
+    descentRate: 2200,
+    accelerationRate: 2.0,
+    decelerationRate: 1.5
+  },
+  // J - Super (e.g., Airbus A380)
+  "J": {
+    turnRate: 2.0,
+    climbRate: 1200,
+    descentRate: 2000,
+    accelerationRate: 1.5,
+    decelerationRate: 1.0
+  }
+};
+
+
 // ================================================================================= //
 //                            GEOGRAPHICAL HELPERS & CONSTANTS                       //
 // ================================================================================= //
 const NM_TO_KM = 1.852; // Nautical Miles to Kilometers conversion factor.
 const KNOTS_TO_KPS = 0.000514444; // Knots (nautical miles per hour) to Kilometers Per Second.
 const FEET_TO_KM = 0.0003048; // Feet to Kilometers.
+const KNOTS_TO_MPS = 0.51444; // Knots to Meters Per Second
+const METERS_TO_FEET = 3.28084; // Meters to Feet conversion factor.
 
 let minLon, maxLon, minLat, maxLat;
 
@@ -66,6 +114,17 @@ let hoveredAircraft = null; // The aircraft currently being hovered over by the 
 let radarRadius; // The radius of the radar scope in pixels, calculated on resize.
 let kmPerPixel; // The ratio of kilometers to pixels, used for converting real-world distances to screen distances.
 
+const phase = {
+  TAKEOFF: "takeoff",
+  INITIAL_CLIMB: "initial_climb",
+  CLIMB: "climb",
+  CRUISE: "cruise",
+  DESCENT: "descent",
+  FINAL_DESCENT: "final_descent",
+  FINAL_APPROACH: "final_approach",
+  LANDING: "landing"
+};
+
 // ================================================================================= //
 //                                TIMING & ANIMATION STATE                           //
 // ================================================================================= //
@@ -84,101 +143,154 @@ class Aircraft {
    * @param {number} heading - The initial heading in degrees (0-360).
    * @param {number} altitude - The initial altitude in feet.
    * @param {number} speed - The initial speed in knots.
-   * @param {string} destination - The flight's destination airport ICAO code (e.g., "LIMC").
-   * @param {string} wtc - The wake turbulence category ("L", "M", "H").
+   * @param {string} departure - The flight's departure airport ICAO code.
+   * @param {string} destination - The flight's destination airport ICAO code.
+   * @param {string} wtc - The wake turbulence category ("L", "M", "H", "J").
    * @param {number} [tagAngle=0] - The initial angle for the data tag, in radians.
+   * @param {string} phase - The initial flight phase.
    */
-  constructor(callsign, lat, lon, heading, altitude, speed, destination, wtc, tagAngle) {
+  constructor(callsign, lat, lon, heading, altitude, speed, departure, destination, wtc, tagAngle, phase) {
     this.callsign = callsign;
     this.lat = lat;
     this.lon = lon;
+    this.departure = departure;
     this.destination = destination;
     this.wtc = wtc;
     this.scratchpad = "SCRATCHPAD";
-    this.verticalSpeed = 0; // Vertical speed in feet per minute.
 
-    // Convert initial lat/lon to pixel coordinates for immediate display.
+    // --- NEW: Look up performance data based on WTC ---
+    const performance = AIRCRAFT_PERFORMANCE[this.wtc] || AIRCRAFT_PERFORMANCE["M"];
+    this.turnRate = performance.turnRate;
+    this.climbRate = performance.climbRate;
+    this.descentRate = performance.descentRate;
+    this.accelerationRate = performance.accelerationRate;
+    this.decelerationRate = performance.decelerationRate;
+
+    // --- Core Flight Parameters ---
+    this.altitude = altitude; // Current altitude in feet
+    this.targetAlt = altitude; // Assigned altitude in feet
+    this.verticalSpeed = 0; // Current vertical speed in feet per minute
+
+    this.heading = heading; // Current heading in degrees
+    this.targetHdg = heading; // Assigned heading in degrees
+    this.track = heading; // Actual direction of travel over the ground
+
+    this.indicatedAirspeed = speed; // Current indicated airspeed (IAS) in knots
+    this.targetSpd = speed; // Assigned speed in knots
+    this.trueAirspeed = 0; // Calculated true airspeed (TAS) in knots
+    this.groundSpeed = 0; // Calculated ground speed in knots
+
+    this.phase = phase;
+
+    // --- Display & Position Properties ---
     const { x, y } = latLonToPixel(this.lat, this.lon);
-    this.displayX = x; // The X coordinate used for rendering (updates with radar sweep).
-    this.displayY = y; // The Y coordinate used for rendering (updates with radar sweep).
-    
-    this.displayHdg = heading; // The heading used for rendering.
-    this.heading = heading; // The aircraft's current actual heading.
-    this.targetHdg = heading; // The heading assigned by the controller.
-    this.altitude = altitude; // The aircraft's current actual altitude.
-    this.targetAlt = altitude; // The altitude assigned by the controller.
-    this.speed = speed; // The aircraft's current actual speed.
-    this.targetSpd = speed; // The speed assigned by the controller.
-    this.tagAngle = tagAngle || 0; // The angle of the data tag relative to the aircraft symbol.
+    this.displayX = x;
+    this.displayY = y;
+    this.displayHdg = heading;
+    this.tagAngle = tagAngle || 0;
   }
 
 
   /**
-   * @summary Updates the aircraft's position and flight parameters based on elapsed time.
-   * @param {number} deltaTime - The time in seconds since the last update.
+   * The new physics-based update loop for the aircraft.
+   * @param {number} deltaTime - Time in seconds since the last frame.
+   */
+  /**
+   * The new physics-based update loop for the aircraft.
+   * @param {number} deltaTime - Time in seconds since the last frame.
    */
   update(deltaTime) {
-    // --- 1. HEADING INTERPOLATION ---
+    // --- 1. HEADING LOGIC ---
+    // Adjusts the current heading towards the target heading based on the aircraft's turn rate.
     if (this.heading !== this.targetHdg) {
-        const turnRate = 2; // Aircraft turn rate in degrees per second.
-        const turnStep = turnRate * deltaTime;
-        
+        const turnStep = this.turnRate * deltaTime;
         let diff = this.targetHdg - this.heading;
+
+        // Ensure the aircraft turns in the shortest direction
         if (diff > 180) diff -= 360;
         if (diff < -180) diff += 360;
 
+        // Apply the turn, ensuring we don't overshoot the target
         if (Math.abs(diff) < turnStep) {
             this.heading = this.targetHdg;
         } else {
             this.heading += turnStep * Math.sign(diff);
         }
-        this.heading = ((this.heading % 360) + 360) % 360;
+        // Keep heading within the 0-359 degree range
+        this.heading = (this.heading + 360) % 360;
     }
 
-    // --- 2. SPEED INTERPOLATION ---
-    if (this.speed !== this.targetSpd) {
-        const accel = 10; // Aircraft acceleration/deceleration in knots per second.
-        const speedStep = accel * deltaTime;
-
-        if (Math.abs(this.targetSpd - this.speed) < speedStep) {
-            this.speed = this.targetSpd;
-        } else {
-            this.speed += speedStep * Math.sign(this.targetSpd - this.speed);
-        }
-    }
-
-    // --- 3. ALTITUDE INTERPOLATION ---
-    if (this.altitude !== this.targetAlt) {
-        const verticalSpeedFPM = 1500; // Standard climb/descent rate in feet per minute.
-        const verticalSpeedFPS = verticalSpeedFPM / 60;
-        const altStep = verticalSpeedFPS * deltaTime;
-
-        if (Math.abs(this.targetAlt - this.altitude) < altStep) {
-            this.altitude = this.targetAlt;
-            this.verticalSpeed = 0;
-        } else {
-            const direction = Math.sign(this.targetAlt - this.altitude);
-            this.altitude += altStep * direction;
-            this.verticalSpeed = verticalSpeedFPM * direction;
+    // --- 2. ALTITUDE LOGIC ---
+    // Adjusts altitude towards the target using climb/descent rates.
+    const altDiff = this.targetAlt - this.altitude;
+    if (Math.abs(altDiff) > 10) { // Only adjust if difference is more than 10 feet
+        if (altDiff > 0) { // Climbing
+            const maxAltChange = (this.climbRate / 60) * deltaTime; // Convert FPM to feet per second
+            this.altitude += Math.min(maxAltChange, altDiff);
+            this.verticalSpeed = this.climbRate;
+        } else { // Descending
+            const maxAltChange = (this.descentRate / 60) * deltaTime; // Convert FPM to feet per second
+            this.altitude += Math.max(-maxAltChange, altDiff); // Use max for negative change
+            this.verticalSpeed = -this.descentRate;
         }
     } else {
+        this.altitude = this.targetAlt;
         this.verticalSpeed = 0;
     }
 
-    // --- 4. GEOGRAPHICAL POSITION UPDATE ---
-    const speedInKps = this.speed * KNOTS_TO_KPS;
-    const distanceMovedKm = speedInKps * deltaTime;
-    const bearingRad = this.heading * Math.PI / 180;
+    // --- 3. SPEED LOGIC ---
+    // Adjusts speed towards the target using acceleration/deceleration rates.
+    const speedDiff = this.targetSpd - this.indicatedAirspeed;
+    if (Math.abs(speedDiff) > 0.5) { // Only adjust if difference is significant
+        if (speedDiff > 0) { // Accelerating
+            const maxSpeedChange = this.accelerationRate * deltaTime;
+            this.indicatedAirspeed += Math.min(maxSpeedChange, speedDiff);
+        } else { // Decelerating
+            const maxSpeedChange = this.decelerationRate * deltaTime;
+            this.indicatedAirspeed += Math.max(-maxSpeedChange, speedDiff);
+        }
+    } else {
+        this.indicatedAirspeed = this.targetSpd;
+    }
+    
+    // --- 4. ATMOSPHERIC & SPEED CONVERSIONS (Simplified) ---
+    // True Airspeed (TAS) is roughly 2% higher than Indicated Airspeed (IAS) per 1000 ft.
+    this.trueAirspeed = this.indicatedAirspeed * (1 + (this.altitude / 1000) * 0.02);
+    
+    // --- 5. GROUND SPEED CALCULATION ---
+    const windRad = (windDirection - 180) * Math.PI / 180;
+    const headingRad = this.heading * Math.PI / 180;
+    const tasX = this.trueAirspeed * Math.sin(headingRad);
+    const tasY = this.trueAirspeed * Math.cos(headingRad);
+    const windX = windSpeed * Math.sin(windRad);
+    const windY = windSpeed * Math.cos(windRad);
+    const gsX = tasX + windX;
+    const gsY = tasY + windY;
+    this.groundSpeed = Math.sqrt(gsX * gsX + gsY * gsY);
+    const trueCourseRad = Math.atan2(gsX, gsY);
+    this.track = (trueCourseRad * 180 / Math.PI + 360) % 360;
+
+    // --- 6. POSITIONAL UPDATE ---
+    const distanceMovedKm = (this.groundSpeed * KNOTS_TO_KPS) * deltaTime;
     const latRad = this.lat * Math.PI / 180;
-    const R = 6371; // Earth's mean radius in kilometers.
-
-    const newLatRad = Math.asin(Math.sin(latRad) * Math.cos(distanceMovedKm / R) +
-      Math.cos(latRad) * Math.sin(distanceMovedKm / R) * Math.cos(bearingRad));
-    const newLonRad = (this.lon * Math.PI / 180) + Math.atan2(Math.sin(bearingRad) * Math.sin(distanceMovedKm / R) * Math.cos(latRad),
-      Math.cos(distanceMovedKm / R) - Math.sin(latRad) * Math.sin(newLatRad));
-
+    const R = 6371; // Earth's radius in km
+    const newLatRad = Math.asin(Math.sin(latRad) * Math.cos(distanceMovedKm / R) + Math.cos(latRad) * Math.sin(distanceMovedKm / R) * Math.cos(trueCourseRad));
+    const newLonRad = (this.lon * Math.PI / 180) + Math.atan2(Math.sin(trueCourseRad) * Math.sin(distanceMovedKm / R) * Math.cos(latRad), Math.cos(distanceMovedKm / R) - Math.sin(latRad) * Math.sin(newLatRad));
     this.lat = newLatRad * 180 / Math.PI;
     this.lon = newLonRad * 180 / Math.PI;
+  }
+
+  // --- NEW SIMPLIFIED SETTER METHODS ---
+  setHeading(newHeading) {
+    this.targetHdg = ((newHeading % 360) + 360) % 360;
+  }
+
+  setSpeed(newSpeed) {
+    this.targetSpd = Math.max(120, newSpeed); // Set the target Indicated Airspeed (IAS)
+  }
+
+  setAltitude(newAltitude) {
+    this.targetAlt = newAltitude;
   }
 
   /**
@@ -194,7 +306,7 @@ class Aircraft {
     ctx.fillStyle = "#0f0";
     ctx.fill();
     const lineTimeLength = 60; // The vector line represents 60 seconds of travel at current speed.
-    const speedInKps = this.speed * KNOTS_TO_KPS;
+    const speedInKps = this.groundSpeed * KNOTS_TO_KPS;
     const distanceKm = speedInKps * lineTimeLength;
     const lineLength = distanceKm / kmPerPixel;
     const rad = (this.displayHdg * Math.PI) / 180;
@@ -233,30 +345,6 @@ class Aircraft {
         ctx.fillText(layout.lines[1].text, layout.tagOriginX, layout.anchor.y);
         ctx.fillText(layout.lines[2].text, layout.tagOriginX, layout.anchor.y + layout.lineHeight);
     }
-  }
-
-  /**
-   * @summary Sets the new target heading for the aircraft.
-   * @param {number} newHeading - The desired heading in degrees (0-360).
-   */
-  setHeading(newHeading) {
-    this.targetHdg = ((newHeading % 360) + 360) % 360; // Normalize to ensure it's within the 0-360 range.
-  }
-
-  /**
-   * @summary Sets the new target speed for the aircraft.
-   * @param {number} newSpeed - The desired speed in knots.
-   */
-  setSpeed(newSpeed) {
-    this.targetSpd = Math.max(100, newSpeed); // Enforce a minimum speed to prevent unrealistic scenarios.
-  }
-
-  /**
-   * @summary Sets the new target altitude for the aircraft.
-   * @param {number} newAltitude - The desired altitude in feet.
-   */
-  setAltitude(newAltitude) {
-    this.targetAlt = newAltitude;
   }
 }
 
@@ -325,15 +413,16 @@ function calculateTagLayout(plane, isHovered) {
     const lineHeight = 15;
     const padding = 3;
 
-    // --- 1. Prepare Text Content ---
+    // --- Text Content ---
     const assignedHdg = `H${Math.round(plane.targetHdg).toString().padStart(3, '0')}`;
     const line1 = { text: `${plane.callsign} ${assignedHdg}` };
 
     const currentFL = Math.round(plane.altitude / 100).toString().padStart(3, '0');
     let trendIndicator = " ";
-    if (Math.abs(plane.targetAlt - plane.altitude) > 50) {
-        trendIndicator = plane.targetAlt > plane.altitude ? "↑" : "↓";
+    if (Math.abs(plane.verticalSpeed) > 100) { // Show indicator for any significant V/S
+        trendIndicator = plane.verticalSpeed > 0 ? "↑" : "↓";
     }
+    // CHANGED: Use the live verticalSpeed, rounded to hundreds of FPM.
     const crcVal = Math.round(plane.verticalSpeed / 100);
     const crcText = `${crcVal > 0 ? '+' : ''}${crcVal.toString().padStart(2, '0')}`;
     const line2 = { 
@@ -343,19 +432,17 @@ function calculateTagLayout(plane, isHovered) {
     };
     
     const clearedFL = Math.round(plane.targetAlt / 100).toString().padStart(3, '0');
-    const speedWTC = `${Math.round(plane.speed)}${plane.wtc}`;
+    // CHANGED: The speed display now shows the calculated Ground Speed.
+    const speedWTC = `${Math.round(plane.groundSpeed)}${plane.wtc}`;
     const line3 = { text: `${speedWTC} ${clearedFL}` };
     
     const line4 = { text: plane.scratchpad };
 
+    // ... The rest of the function (dimension and position calculations) remains exactly the same.
     const lines = isHovered ? [line1, line2, line3, line4] : [line1, line2, line3];
     lines.forEach(line => line.width = ctx.measureText(line.text).width);
-
-    // --- 2. Calculate Block Dimensions ---
     const blockWidth = Math.max(...lines.map(line => line.width));
     const blockHeight = lineHeight * lines.length;
-    
-    // --- 3. Calculate Positions ---
     const TAG_GAP = 15;
     const radiusX = (blockWidth / 2) + TAG_GAP + padding;
     const radiusY = (blockHeight / 2) + TAG_GAP + padding;
@@ -364,12 +451,9 @@ function calculateTagLayout(plane, isHovered) {
         y: plane.displayY + radiusY * Math.sin(plane.tagAngle)
     };
     const tagOriginX = anchor.x - (blockWidth / 2);
-
-    // --- 4. Calculate Hitboxes ---
     const callsignText = `${plane.callsign} `;
-    const speedWTCText = `${Math.round(plane.speed)}${plane.wtc}`;
+    const speedWTCText = `${Math.round(plane.groundSpeed)}${plane.wtc}`; // Use GS here too
     const clearedFLText = ` ${Math.round(plane.targetAlt / 100).toString().padStart(3, '0')}`;
-
     const headingWidth = ctx.measureText(assignedHdg).width;
     const headingX = tagOriginX + ctx.measureText(callsignText).width;
     const speedWidth = ctx.measureText(speedWTCText).width;
@@ -628,7 +712,7 @@ function gameLoop(currentTime) {
         const { x, y } = latLonToPixel(plane.lat, plane.lon);
         plane.displayX = x;
         plane.displayY = y;
-        plane.displayHdg = plane.heading; 
+        plane.displayHdg = plane.track; 
     });
     timeSinceLastSweep = 0;
   }
@@ -882,8 +966,8 @@ resizeCanvas();
 const initialPos1 = pixelToLatLon(100, 100);
 const initialPos2 = pixelToLatLon(700, 600);
 
-aircraftList.push(new Aircraft("BAW123", initialPos1.lat, initialPos1.lon, 135, 18000, 230, "LIMC", "M"));
-aircraftList.push(new Aircraft("AWE456", initialPos2.lat, initialPos2.lon, 225, 16000, 160, "LIML", "M"));
+aircraftList.push(new Aircraft("BAW123", initialPos1.lat, initialPos1.lon, 135, 18000, 280, "EGLL", "LIMC", "H", 0, phase.CRUISE));
+aircraftList.push(new Aircraft("AWE456", initialPos2.lat, initialPos2.lon, 225, 24000, 310, "EDDF", "LIML", "M", 0, phase.CRUISE));
 selectedAircraft = aircraftList[0];
 
 
