@@ -22,7 +22,7 @@ function queryAndMap(db, sql, mapper) {
  * @summary Initializes the SQL.js database and loads all necessary navigation data within the geographic bounds.
  */
 export async function loadNavData(navCtx, navdataCanvas) {
-  const wasmPath = '../node_modules/sql.js/dist/sql-wasm.wasm';
+  const wasmPath = '../libs/sql-wasm.wasm';
   const dbPath = '../NavData/navdb.s3db';
 
   initSqlJs({ locateFile: () => wasmPath })
