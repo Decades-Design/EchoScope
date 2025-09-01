@@ -2,79 +2,54 @@
 
 import { setNavData, drawNavData } from './mapRenderer.js';
 
-// Helper function for polling
-const poll = (fn, ms) => {
-    return new Promise((resolve, reject) => {
-        const interval = setInterval(async () => {
-            try {
-                const result = await fn();
-                if (result.status === 'complete') {
-                    clearInterval(interval);
-                    resolve(result);
-                } else if (result.status === 'failed') {
-                    clearInterval(interval);
-                    reject(new Error('Package generation failed.'));
-                }
-                // If status is 'pending', do nothing and wait for the next interval
-            } catch (error) {
-                clearInterval(interval);
-                reject(error);
-            }
-        }, ms);
-    });
-};
-
+// The poll helper function is NO LONGER NEEDED and can be deleted.
 
 export async function loadNavData(navCtx, navdataCanvas) {
-  console.log("Requesting Navigraph data package...");
+  console.log("Requesting Navigraph data URL...");
 
   try {
-    // Step 1: Request the package for the airports you need
-    const requestResponse = await fetch('/api/navdata/request-package', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icaos: ["LIML", "LIMC"] }) // Specify your airports
-    });
+    // Step 1: Request the download URL from our new single backend endpoint.
+    const urlResponse = await fetch('/api/navdata/get-navdata-url');
     
-    // Handle auth errors - maybe the access token expired
-    if (requestResponse.status === 401) {
+    if (urlResponse.status === 401) {
         console.log("Not authenticated. Redirecting to login.");
         window.location.href = '/api/auth/login';
         return;
     }
-    if (!requestResponse.ok) throw new Error('Failed to request package.');
+    if (urlResponse.status === 403) {
+        throw new Error('User does not have an active subscription.');
+    }
+    if (!urlResponse.ok) {
+        throw new Error('Failed to get download URL from backend.');
+    }
 
-    const { package_id } = await requestResponse.json();
-    console.log(`Package requested successfully. ID: ${package_id}`);
+    const { download_url } = await urlResponse.json();
+    console.log(`Download URL received successfully.`);
 
-
-    // Step 2: Poll the check-package endpoint until the status is 'complete'
-    console.log("Waiting for package to be generated...");
-    const checkFn = () => fetch(`/api/navdata/check-package?id=${package_id}`).then(res => res.json());
-    const finalPackage = await poll(checkFn, 5000); // Poll every 5 seconds
-    console.log(`Package is complete. Download URL received.`);
-
-
-    // Step 3: Fetch the database file from the signed URL
-    const dbResponse = await fetch(finalPackage.download_url);
-    if (!dbResponse.ok) throw new Error('Failed to download the database file.');
-    const filebuffer = await dbResponse.arrayBuffer();
-    console.log("Database file downloaded.");
-
-
-    // Step 4: Load the downloaded database into SQL.js (This part is mostly your existing code)
-    const SQL = await initSqlJs({ locateFile: () => '../libs/sql-wasm.wasm' });
-    const dbObject = new SQL.Database(new Uint8Array(filebuffer));
+    // Step 2: Fetch the database file from the signed URL.
+    const dbResponse = await fetch(download_url);
+    if (!dbResponse.ok) throw new Error('Failed to download the data file.');
     
-    // ... all your 'queryAndMap' calls would go here, unchanged ...
-    // const navData = { airports: queryAndMap(...) };
+    // --- IMPORTANT: Handling the JSON Data ---
+    // The file is a zip archive. We need to handle that now instead of a direct SQLite file.
+    // This will require a library like JSZip. You would add it to your index.html.
     
-    console.log("Database loaded and parsed successfully.");
-    // setNavData(navData);
-    // drawNavData(navCtx, navdataCanvas);
-    // return navData;
+    console.log("Data file (zip) downloaded.");
+    // const blob = await dbResponse.blob();
+    // const jszip = new JSZip();
+    // const zip = await jszip.loadAsync(blob);
+    //
+    // const airportsText = await zip.file("airports.json").async("string");
+    // const airports = JSON.parse(airportsText);
+    //
+    // console.log("Airports loaded from JSON:", airports);
+
+    // Your existing SQL.js logic would be replaced with parsing for each JSON file you need.
+    // For now, we'll stop here to confirm the download works.
+    console.log("Data loading process complete.");
 
   } catch (err) {
     console.error("Failed to load Navigraph data:", err);
+    // Display an error to the user on the canvas
   }
 }

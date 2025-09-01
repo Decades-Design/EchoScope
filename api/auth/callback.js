@@ -2,6 +2,8 @@
 const axios = require('axios');
 const cookie = require('cookie');
 
+const { createAuthCookies } = require('../_utils/token-helper');
+
 module.exports = async (req, res) => {
   const { code, state } = req.query;
   const cookies = cookie.parse(req.headers.cookie || '');
@@ -27,10 +29,7 @@ module.exports = async (req, res) => {
     const { access_token, refresh_token, expires_in } = response.data;
 
     // Securely store tokens in cookies
-    res.setHeader('Set-Cookie', [
-      cookie.serialize('access_token', access_token, { httpOnly: true, secure: true, path: '/', maxAge: expires_in }),
-      cookie.serialize('refresh_token', refresh_token, { httpOnly: true, secure: true, path: '/' })
-    ]);
+    res.setHeader('Set-Cookie', createAuthCookies(newAccessToken, newRefreshToken, newExpiresIn));
 
     // Redirect user back to the main application page
     res.writeHead(302, { Location: '/' });
