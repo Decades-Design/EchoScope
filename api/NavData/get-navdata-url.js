@@ -9,6 +9,8 @@ module.exports = async (req, res) => {
     let accessToken = cookies.access_token;
     const refreshToken = cookies.refresh_token;
 
+    let package_status = null; // e.g. 'current', 'outdated'
+
     if (!refreshToken) {
         return res.status(401).json({ error: 'Not authenticated. No refresh token found.' });
     }
@@ -25,7 +27,9 @@ module.exports = async (req, res) => {
     // Boilerplate: Validate subscription
     const subscription = await validateFmsDataSubscription(accessToken);
     if (!subscription.ActiveSubscription) {
-        return res.status(403).json({ error: 'Forbidden. No active fmsdata subscription found.' });
+        package_status = 'outdated';
+    } else if (subscription.type === 'fmsdata' && subscription.ActiveSubscription) {
+        package_status = 'current';
     }
     
     try {

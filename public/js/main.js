@@ -19,6 +19,8 @@ import {
   calculateTagLayout,
 } from "./ui.js";
 
+export let allNavData = null; // Will hold the loaded nav data
+
 // UI & CANVAS GLOBALS
 const canvas = document.getElementById("radar-scope");
 const ctx = canvas.getContext("2d");
@@ -242,7 +244,7 @@ async function initialize() {
   calculateGeographicBounds();
 
   // Asynchronously load nav data
-  const allNavData = await loadNavData(navCtx, navdataCanvas);
+  allNavData = await loadNavData(navCtx, navdataCanvas);
 
   // Create initial aircraft
   const initialPos1 = pixelToLatLon(100, 100, canvas);
