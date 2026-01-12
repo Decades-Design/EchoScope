@@ -24,7 +24,7 @@ export function calculateTagLayout(plane, isHovered, ctx) {
     const crcVal = Math.round(plane.verticalSpeed / 100);
     const crcText = `${crcVal > 0 ? '+' : ''}${crcVal.toString().padStart(2, '0')}`;
     const line2 = { 
-      text: isHovered 
+        text: isHovered 
         ? `${currentFL}${trendIndicator} ${plane.destination} XX ${crcText}`
         : `${currentFL}${trendIndicator} ${plane.destination}`
     };

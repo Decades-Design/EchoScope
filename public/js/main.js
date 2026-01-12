@@ -230,21 +230,19 @@ function showLoginPopup() {
 // INITIALIZATION
 async function initialize() {
   resizeCanvas();
-  
-  // Check for the presence of the refresh token cookie
-  if (!hasRefreshToken()) {
-    console.log("No refresh token found. Displaying login pop-up.");
-    showLoginPopup();
-    return; // IMPORTANT: Stop the initialization process right here.
-  }
-
-  // If the script reaches this point, it means the token exists and we can proceed.
-  console.log("Refresh token found. Initializing application.");
 
   calculateGeographicBounds();
 
-  // Asynchronously load nav data
+  console.log("Initializing application and attempting to load nav data.");
   allNavData = await loadNavData(navCtx, navdataCanvas);
+
+  // If loadNavData fails due to auth, it will redirect, and the code below won't run.
+  // If it succeeds, the rest of the app will load.
+  if (!allNavData) {
+      console.log("Nav data loading was unsuccessful. Halting aircraft initialization.");
+      showLoginPopup(); // Or show a generic error message
+      return;
+  }
 
   // Create initial aircraft
   const initialPos1 = pixelToLatLon(100, 100, canvas);

@@ -1,4 +1,4 @@
-// /api/_utils/token-helper.js
+// /api/utils/token-helper.js
 const axios = require('axios');
 const cookie = require('cookie');
 
@@ -12,7 +12,7 @@ const cookie = require('cookie');
 function createAuthCookies(accessToken, refreshToken, expiresIn) {
     return [
       cookie.serialize('access_token', accessToken, { httpOnly: true, secure: true, path: '/', maxAge: expiresIn }),
-      cookie.serialize('refresh_token', refreshToken, { httpOnly: true, secure: true, path: '/' })
+      cookie.serialize('refres  h_token', refreshToken, { httpOnly: true, secure: true, path: '/' })
     ];
 }
 
@@ -36,7 +36,7 @@ async function refreshAccessToken(refreshToken, res) {
     // VERY IMPORTANT: Log this for debugging, especially the new refresh token.
     console.log("Successfully refreshed tokens. New refresh token received.");
 
-    res.setHeader('Set-Cookie', createAuthCookies(newAccessToken, newRefreshToken, newExpiresIn));
+    res.setHeader('Set-Cookie', createAuthCookies(access_token, refresh_token, expires_in));
 
     return {
       newAccessToken: access_token,
@@ -44,9 +44,18 @@ async function refreshAccessToken(refreshToken, res) {
       newExpiresIn: expires_in
     };
   } catch (error) {
-    console.error('CRITICAL: Token refresh failed.', error.response ? error.response.data : error.message);
-    // If the refresh fails, we throw an error. This will force the user to log in again.
-    throw new Error('Could not refresh token.');
+    console.error('CRITICAL: Token refresh failed. The refresh token is likely invalid. Clearing cookies and forcing re-login.', error.response ? error.response.data : error.message);
+
+    res.setHeader('Set-Cookie', [
+      cookie.serialize('access_token', '', { httpOnly: true, secure: true, path: '/', maxAge: 0 }),
+      cookie.serialize('refresh_token', '', { httpOnly: true, secure: true, path: '/', maxAge: 0 })
+    ]);
+
+    res.writeHead(302, { Location: '/' });
+
+    res.end();
+
+    return null; 
   }
 }
 

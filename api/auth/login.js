@@ -17,8 +17,8 @@ module.exports = (req, res) => {
 
   // Store the verifier and state in a secure, HTTP-only cookie
   res.setHeader('Set-Cookie', [
-    cookie.serialize('auth_code_verifier', code_verifier, { httpOnly: true, secure: true, path: '/', maxAge: 60 * 15 }),
-    cookie.serialize('auth_state', state, { httpOnly: true, secure: true, path: '/', maxAge: 60 * 15 })
+    cookie.serialize('auth_code_verifier', code_verifier, { httpOnly: true, secure: true, path: '/', maxAge: 900 }),
+    cookie.serialize('auth_state', state, { httpOnly: true, secure: true, path: '/', maxAge: 900 })
   ]);
 
   const authUrl = new URL('https://identity.navigraph.com/connect/authorize');

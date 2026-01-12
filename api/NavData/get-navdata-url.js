@@ -1,26 +1,34 @@
 // /api/navdata/get-navdata-url.js
 const axios = require('axios');
 const cookie = require('cookie');
-const { refreshAccessToken, createAuthCookies, validateFmsDataSubscription } = require('../_utils/token-helper');
+const { refreshAccessToken, createAuthCookies, validateFmsDataSubscription } = require('../utils/token-helper');
 
 module.exports = async (req, res) => {
     // Boilerplate: get tokens, handle refresh
-    const cookies = cookie.parse(req.headers.cookie || '');
+    const cookies = cookie.parse(req.headers.cookie || ''); 
     let accessToken = cookies.access_token;
     const refreshToken = cookies.refresh_token;
+
+    console.log("Received request for Navigraph navdata URL.");
 
     let package_status = null; // e.g. 'current', 'outdated'
 
     if (!refreshToken) {
         return res.status(401).json({ error: 'Not authenticated. No refresh token found.' });
     }
+
     if (!accessToken) {
         try {
-            const tokens = await refreshAccessToken(refreshToken);
+            const tokens = await refreshAccessToken(refreshToken, res);
+            
+            if (!tokens) {
+                return;
+            }
+            
             accessToken = tokens.newAccessToken;
-            res.setHeader('Set-Cookie', createAuthCookies(tokens.newAccessToken, tokens.newRefreshToken, tokens.newExpiresIn));
         } catch (error) {
-            return res.status(401).json({ error: 'Authentication failed during token refresh.' });
+            // This catch block will now only catch unexpected errors
+            return res.status(500).json({ error: 'An unexpected error occurred during token refresh.' });
         }
     }
 
@@ -58,20 +66,19 @@ module.exports = async (req, res) => {
             console.log('Access token expired. Attempting refresh...');
             try {
                 // --- REFRESH AND RETRY ---
-                const { newAccessToken, newRefreshToken, newExpiresIn } = await refreshAccessToken(refreshToken);
+                const tokens = await refreshAccessToken(refreshToken, res);
                 const retryResponse = await axios.get(
                     'https://api.navigraph.com/v1/navdata/packages',
-                    { headers: { 'Authorization': `Bearer ${newAccessToken}` } }
+                    { headers: { 'Authorization': `Bearer ${tokens.newAccessToken}` } }
                 );
                 
                 const packages = retryResponse.data;
                 const currentPackage = packages.find(p => p.package_status === 'current');
                 if (!currentPackage || !currentPackage.files || currentPackage.files.length === 0) {
-                     throw new Error('No current navdata package found after retry.');
+                    throw new Error('No current navdata package found after retry.');
                 }
                 const downloadUrl = currentPackage.files[0].signed_url;
 
-                res.setHeader('Set-Cookie', createAuthCookies(newAccessToken, newRefreshToken, newExpiresIn));
                 res.status(200).json({ download_url: downloadUrl });
                 
             } catch (refreshError) {

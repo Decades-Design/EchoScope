@@ -2,14 +2,12 @@
 
 import { setNavData, drawNavData } from './mapRenderer.js';
 
-// The poll helper function is NO LONGER NEEDED and can be deleted.
-
 export async function loadNavData(navCtx, navdataCanvas) {
   console.log("Requesting Navigraph data URL...");
 
   try {
     // Step 1: Request the download URL from our new single backend endpoint.
-    const urlResponse = await fetch('/api/navdata/get-navdata-url');
+    const urlResponse = await fetch('../../api/NavData/get-navdata-url.js');
     
     if (urlResponse.status === 401) {
         console.log("Not authenticated. Redirecting to login.");

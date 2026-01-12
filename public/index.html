@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ATC Radar</title>
     <link rel="stylesheet" href="style.css" />
-    <script src="../libs/sql-wasm.js"></script>
+    <script src="./libs/sql-wasm.js"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Google+Sans+Code:wght@300..800&display=swap');
     </style>
@@ -21,16 +21,17 @@
     </div>
 
     <script type="module" src="js/main.js"></script>
-      <div id="login-overlay">
-        <div id="login-modal">
-          <h2 class="modal-title">Authentication Required<span class="blinking-cursor">_</span></h2>
-          <p>
-            This Air Traffic Control simulation requires a valid Navigraph
-            subscription to access navigation data.
-          </p>
-          <p>Please log in to continue.</p>
-          <a href="/api/auth/login" class="login-button">Login with Navigraph</a>
-        </div>
+    
+    <div id="login-overlay">
+      <div id="login-modal">
+        <h2 class="modal-title">Authentication Required<span class="blinking-cursor">_</span></h2>
+        <p>
+          This Air Traffic Control simulation requires a valid Navigraph
+          subscription to access navigation data.
+        </p>
+        <p>Please log in to continue.</p>
+        <a href="/api/auth/login" class="login-button">Login with Navigraph</a>
       </div>
+    </div>
   </body>
 </html>
