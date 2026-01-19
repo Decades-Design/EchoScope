@@ -8,7 +8,8 @@ const path = require('path');
 
 const authRoutes = require('./src/auth');
 const { updateNavData } = require('./src/navdata-manager');
-const { validateFmsDataSubscription, refreshAccessToken } = require('./src/token-helper');
+const { initSessionStore, getSession, updateSessionTokens } = require('./src/session-store');
+const { validateFmsDataSubscription, refreshNavigraphToken } = require('./src/token-helper');
 
 const app = express();
 const PORT = 3000;
@@ -20,48 +21,56 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 
 // Database Connection Helper
-async function getDbConnection(filename) {
+async function getNavDB(filename) {
     return open({
         filename: path.join(__dirname, 'data', filename),
         driver: sqlite3.Database
     });
 }
 
-/**
- * MAIN DATA ENDPOINT
- * Instead of downloading the file, the Frontend asks for data (e.g., /api/data/airport/EGLL)
- */
+// MAIN DATA ENDPOINT
 app.get('/api/data/:type/:ident?', async (req, res) => {
-    let accessToken = req.cookies.access_token;
-    const refreshToken = req.cookies.refresh_token;
+    const sessionId = req.cookies.session_id;
 
-    if (!accessToken && !refreshToken) {
+    if (!sessionId) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    // Refresh Token Logic (Simplified)
-    if (!accessToken && refreshToken) {
-        const tokens = await refreshAccessToken(refreshToken, res);
-        if (tokens) accessToken = tokens.newAccessToken;
-        else return res.status(401).json({ error: 'Session expired' });
+    // 1. Look up user in local DB
+    const session = await getSession(sessionId);
+    if (!session) {
+        return res.status(401).json({ error: 'Invalid session' });
     }
 
-    // Check Subscription
-    const sub = await validateFmsDataSubscription(accessToken);
+    let { access_token, refresh_token, expires_at } = session;
+
+    // 2. Check if Access Token is expired
+    if (Date.now() > expires_at) {
+        console.log('Access token expired. Refreshing on backend...');
+        const newTokens = await refreshNavigraphToken(refresh_token);
+        
+        if (!newTokens.success) {
+            return res.status(401).json({ error: 'Session expired. Please log in again.' });
+        }
+
+        // Update DB with new tokens (User doesn't know this happened)
+        await updateSessionTokens(sessionId, newTokens.access_token, newTokens.refresh_token, newTokens.expires_in);
+        access_token = newTokens.access_token;
+    }
+
+    // 3. Check Subscription
+    const sub = await validateFmsDataSubscription(access_token);
     
-    // Select Database based on Subscription
-    const dbFileName = (sub.ActiveSubscription && sub.type === 'fmsdata') 
-        ? 'current.sqlite' 
-        : 'outdated.sqlite';
+    // 4. Select Database
+    const dbFileName = (sub.active) ? 'current.sqlite' : 'outdated.sqlite';
 
     try {
-        const db = await getDbConnection(dbFileName);
+        const db = await getNavDB(dbFileName);
         
-        // Example: Query the DB
-        // You can expand this switch case for different data types
         let result;
         const { type, ident } = req.params;
 
+        // Example Logic
         if (type === 'airport') {
             result = await db.get('SELECT * FROM airports WHERE ident = ?', ident);
         } else if (type === 'navaid') {
@@ -69,6 +78,8 @@ app.get('/api/data/:type/:ident?', async (req, res) => {
         }
         
         await db.close();
+        
+        if (!result) return res.status(404).json({ error: 'Not found' });
         res.json(result);
 
     } catch (err) {
@@ -77,15 +88,19 @@ app.get('/api/data/:type/:ident?', async (req, res) => {
     }
 });
 
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// Initialize and Start
+(async () => {
+    await initSessionStore(); // Ensure session DB is ready
     
-    // Run NavData Update immediately on startup
+    // Run NavData Update immediately on startup if missing
     updateNavData();
+
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
 
     // Schedule Cron: Run at 02:00 AM every day
     cron.schedule('0 2 * * *', () => {
         updateNavData();
     });
-});
+})();
