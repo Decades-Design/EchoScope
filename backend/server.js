@@ -29,7 +29,7 @@ async function getNavDB(filename) {
 }
 
 // MAIN DATA ENDPOINT
-app.get('/api/data/:type/:ident?', async (req, res) => {
+const handleDataRequest = async (req, res) => {
     const sessionId = req.cookies.session_id;
 
     if (!sessionId) {
@@ -53,7 +53,7 @@ app.get('/api/data/:type/:ident?', async (req, res) => {
             return res.status(401).json({ error: 'Session expired. Please log in again.' });
         }
 
-        // Update DB with new tokens (User doesn't know this happened)
+        // Update DB with new tokens
         await updateSessionTokens(sessionId, newTokens.access_token, newTokens.refresh_token, newTokens.expires_in);
         access_token = newTokens.access_token;
     }
@@ -70,7 +70,7 @@ app.get('/api/data/:type/:ident?', async (req, res) => {
         let result;
         const { type, ident } = req.params;
 
-        // Example Logic
+        // Query Logic
         if (type === 'airport') {
             result = await db.get('SELECT * FROM airports WHERE ident = ?', ident);
         } else if (type === 'navaid') {
@@ -86,7 +86,14 @@ app.get('/api/data/:type/:ident?', async (req, res) => {
         console.error(err);
         res.status(500).json({ error: 'Database error' });
     }
-});
+};
+// --- REGISTER THE ROUTES SEPARATELY ---
+// Route 1: With an ID (e.g., /api/data/airport/EGLL)
+app.get('/api/data/:type/:ident', handleDataRequest);
+
+// Route 2: Without an ID (if you ever need to list all items)
+app.get('/api/data/:type', handleDataRequest);
+
 
 // Initialize and Start
 (async () => {
