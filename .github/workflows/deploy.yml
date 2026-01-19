@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'api/**'         # Only run if backend files change
+      - 'backend/**'         # Only run if backend files change
       - 'package.json'
       - 'server.js'
 
