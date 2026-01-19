@@ -1,0 +1,25 @@
+name: Deploy Backend to Oracle
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'api/**'         # Only run if backend files change
+      - 'package.json'
+      - 'server.js'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/atc-backend
+            git pull origin main
+            npm install --production
+            pm2 restart atc-backend

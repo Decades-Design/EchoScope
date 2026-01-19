@@ -1,8 +1,15 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/update-navdata",
+      "schedule": "0 8 * * *"
+    }
+  ],
+
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/:path*"
+      "destination": "http://92.4.166.252:3000/:path*"
     },
     {
       "source": "/:path*",

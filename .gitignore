@@ -2,3 +2,5 @@
 /.vscode/
 .vercel
 .env
+.env*.local
+backend\data\*.sqlite

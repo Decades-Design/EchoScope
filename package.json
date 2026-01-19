@@ -6,7 +6,9 @@
     "start": "vercel dev"
   },
   "dependencies": {
+    "@vercel/blob": "^2.0.0",
     "axios": "^1.6.0",
+    "better-sqlite3": "^12.6.0",
     "cookie": "^0.6.0"
   }
 }
