@@ -19,7 +19,7 @@ jobs:
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/atc-backend
+            cd EchoScope
             git pull origin main
             npm install --production
             pm2 restart atc-backend
