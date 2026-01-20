@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 
 const dbPath = path.join(__dirname, '../data/sessions.db');
 
@@ -10,6 +11,10 @@ let db;
 
 // Initialize Session Database
 async function initSessionStore() {
+    // Ensure the data directory exists before opening the DB
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
     db = await open({
         filename: dbPath,
         driver: sqlite3.Database

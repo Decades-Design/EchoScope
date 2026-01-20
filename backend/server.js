@@ -66,21 +66,106 @@ const handleDataRequest = async (req, res) => {
 
     try {
         const db = await getNavDB(dbFileName);
-        
-        let result;
         const { type, ident } = req.params;
 
-        // Query Logic
-        if (type === 'airport') {
-            result = await db.get('SELECT * FROM airports WHERE ident = ?', ident);
-        } else if (type === 'navaid') {
-             result = await db.get('SELECT * FROM navaids WHERE ident = ?', ident);
+        // Support richer nav queries inspired by client-side `navDatabase.js`.
+        // Expected query params for spatial queries: minLon,maxLon,minLat,maxLat
+        const minLon = parseFloat(req.query.minLon);
+        const maxLon = parseFloat(req.query.maxLon);
+        const minLat = parseFloat(req.query.minLat);
+        const maxLat = parseFloat(req.query.maxLat);
+
+        const hasBounds = [minLon, maxLon, minLat, maxLat].every(v => Number.isFinite(v));
+
+        let rows;
+
+        switch (type) {
+            case 'navpoints':
+                if (!hasBounds) return res.status(400).json({ error: 'Missing bounding box' });
+                rows = await db.all(
+                    `SELECT * FROM main.tbl_enroute_waypoints WHERE waypoint_longitude BETWEEN ? AND ? AND waypoint_latitude BETWEEN ? AND ? AND waypoint_identifier NOT LIKE 'VP%' AND waypoint_type != 'U'`,
+                    [minLon, maxLon, minLat, maxLat]
+                );
+                break;
+
+            case 'airports':
+                if (!hasBounds) return res.status(400).json({ error: 'Missing bounding box' });
+                rows = await db.all(
+                    `SELECT * FROM tbl_airports WHERE airport_ref_longitude BETWEEN ? AND ? AND airport_ref_latitude BETWEEN ? AND ? AND ifr_capability = 'Y'`,
+                    [minLon, maxLon, minLat, maxLat]
+                );
+                break;
+
+            case 'vors':
+                if (!hasBounds) return res.status(400).json({ error: 'Missing bounding box' });
+                rows = await db.all(
+                    `SELECT * FROM main.tbl_vhfnavaids WHERE vor_longitude BETWEEN ? AND ? AND vor_latitude BETWEEN ? AND ? AND navaid_class LIKE 'V%'`,
+                    [minLon, maxLon, minLat, maxLat]
+                );
+                break;
+
+            case 'terminalWaypoints':
+                if (!hasBounds) return res.status(400).json({ error: 'Missing bounding box' });
+                rows = await db.all(
+                    `SELECT * FROM tbl_terminal_waypoints WHERE waypoint_longitude BETWEEN ? AND ? AND waypoint_latitude BETWEEN ? AND ? AND waypoint_identifier NOT LIKE 'VP%'`,
+                    [minLon, maxLon, minLat, maxLat]
+                );
+                break;
+
+            case 'runways':
+                if (!hasBounds) return res.status(400).json({ error: 'Missing bounding box' });
+                rows = await db.all(
+                    `SELECT * FROM tbl_runways WHERE runway_longitude BETWEEN ? AND ? AND runway_latitude BETWEEN ? AND ?`,
+                    [minLon, maxLon, minLat, maxLat]
+                );
+                break;
+
+            case 'ils':
+                if (!hasBounds) return res.status(400).json({ error: 'Missing bounding box' });
+                rows = await db.all(
+                    `SELECT * FROM tbl_localizers_glideslopes WHERE llz_longitude BETWEEN ? AND ? AND llz_latitude BETWEEN ? AND ?`,
+                    [minLon, maxLon, minLat, maxLat]
+                );
+                break;
+
+            case 'approachPaths':
+                // expects `airports` query param as comma-separated ICAO list
+                if (!req.query.airports) {
+                    await db.close();
+                    return res.status(400).json({ error: 'Missing airports parameter' });
+                }
+                const icaos = req.query.airports.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+                if (icaos.length === 0) {
+                    await db.close();
+                    return res.status(400).json({ error: 'Empty airports list' });
+                }
+                // Build placeholders
+                const placeholders = icaos.map(() => '?').join(',');
+                rows = await db.all(`SELECT * FROM tbl_iaps WHERE airport_identifier IN (${placeholders})`, icaos);
+                break;
+
+            case 'airport':
+            case 'navaid':
+                // keep compatibility with original single-item endpoints
+                if (!ident) {
+                    const table = (type === 'airport') ? 'airports' : 'navaids';
+                    rows = await db.all(`SELECT * FROM ${table}`);
+                } else {
+                    const table = (type === 'airport') ? 'airports' : 'navaids';
+                    const row = await db.get(`SELECT * FROM ${table} WHERE ident = ?`, ident);
+                    await db.close();
+                    if (!row) return res.status(404).json({ error: 'Not found' });
+                    return res.json(row);
+                }
+                break;
+
+            default:
+                await db.close();
+                return res.status(400).json({ error: 'Invalid type' });
         }
-        
+
         await db.close();
-        
-        if (!result) return res.status(404).json({ error: 'Not found' });
-        res.json(result);
+        return res.json(rows);
 
     } catch (err) {
         console.error(err);
@@ -91,7 +176,7 @@ const handleDataRequest = async (req, res) => {
 // Route 1: With an ID (e.g., /api/data/airport/EGLL)
 app.get('/api/data/:type/:ident', handleDataRequest);
 
-// Route 2: Without an ID (if you ever need to list all items)
+// Route 2: Without an ID
 app.get('/api/data/:type', handleDataRequest);
 
 

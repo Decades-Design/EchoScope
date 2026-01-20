@@ -4,3 +4,4 @@
 .env
 .env*.local
 backend\data\*.sqlite
+backend/ssh-key-2026-01-18.key

@@ -1,6 +1,34 @@
 // src/token-helper.js
 const axios = require('axios');
+const { createVerifier } = require('fast-jwt');
+const GetJwks = require('get-jwks');
+const buildJwksGetter = GetJwks.default || GetJwks;
 
+// 1. Setup JWKS Getter
+// This fetches Navigraph's public keys and caches them for 1 hour
+const jwks = buildJwksGetter({
+  jwksPath: '/.well-known/jwks',
+  ttl: 60 * 60 * 1000, // 1 hour
+});
+
+// 2. Setup JWT Verifier
+// This verifies the token signature locally using the public keys
+const verifyJwt = createVerifier({
+  algorithms: ["RS256"],
+  cache: 1000,
+  cacheTTL: 60 * 60 * 1000,
+  key: async (decoded) => {
+    // Fetch the key matching the token's header from Navigraph
+    return jwks.getPublicKey({
+      kid: decoded.header.kid,
+      alg: decoded.header.alg,
+      domain: "https://identity.api.navigraph.com",
+    });
+  },
+});
+
+
+//Refreshes the Access Token using the Refresh Token.
 async function refreshNavigraphToken(refreshToken) {
   try {
     const params = new URLSearchParams();
@@ -9,7 +37,9 @@ async function refreshNavigraphToken(refreshToken) {
     params.append('client_secret', process.env.NAVIGRAPH_CLIENT_SECRET);
     params.append('refresh_token', refreshToken);
 
-    const response = await axios.post('https://identity.navigraph.com/connect/token', params);
+    const response = await axios.post('https://identity.navigraph.com/connect/token', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
     
     return {
       success: true,
@@ -23,24 +53,35 @@ async function refreshNavigraphToken(refreshToken) {
   }
 }
 
+/**
+ * Validates the subscription by verifying the JWT Token signature 
+ * and checking the 'subscriptions' claim array.
+ */
 async function validateFmsDataSubscription(accessToken) {
+  if (!accessToken) return { active: false };
+
   try {
-    const response = await axios.get('https://api.navigraph.com/v1/subscriptions/valid', {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    // 1. Verify the signature and expiration locally
+    // If the token is fake or expired, this will throw an error immediately.
+    const payload = await verifyJwt(accessToken);
 
-    const fmsSubscription = response.data.find(sub => sub.type === 'fmsdata');
-    if (!fmsSubscription) return { active: false };
+    // 2. Check the 'subscriptions' array in the payload
+    // Navigraph sends an array like: ["charts", "fmsdata"]
+    const subs = payload.subscriptions || [];
 
-    const activeDate = new Date(fmsSubscription.date_active);
-    const expiryDate = new Date(fmsSubscription.date_expiry);
-    const now = new Date();
+    const hasUltimate = subs.includes("charts");
+    const hasFmsData = subs.includes("fmsdata");
 
-    if (now >= activeDate && now <= expiryDate) {
+    if (hasUltimate || hasFmsData) {
       return { active: true, type: 'fmsdata' };
     }
+
+    console.log("User logged in but has no active FMS Data subscription.");
     return { active: false };
+
   } catch (error) {
+    // This catches expired tokens, invalid signatures, or network errors fetching keys
+    console.error("JWT Verification failed:", error.message);
     return { active: false };
   }
 }

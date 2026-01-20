@@ -6,6 +6,8 @@ const { createSession } = require('./session-store');
 
 const router = express.Router();
 
+const cookieSecure = process.env.NODE_ENV === 'production' || /^https:\/\//.test(process.env.APP_URL || '');
+
 function base64URLEncode(str) {
     return str.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
@@ -20,8 +22,9 @@ router.get('/login', (req, res) => {
     const code_challenge = base64URLEncode(sha256(code_verifier));
 
     // Store verifier temporarily to validate callback (Short lived)
-    res.cookie('auth_verifier', code_verifier, { httpOnly: true, secure: true, maxAge: 600000 });
-    res.cookie('auth_state', state, { httpOnly: true, secure: true, maxAge: 600000 });
+    const tmpCookieOpts = { httpOnly: true, secure: cookieSecure, maxAge: 600000 };
+    res.cookie('auth_verifier', code_verifier, tmpCookieOpts);
+    res.cookie('auth_state', state, tmpCookieOpts);
 
     const authUrl = new URL('https://identity.navigraph.com/connect/authorize');
     authUrl.searchParams.set('client_id', process.env.NAVIGRAPH_CLIENT_ID);
@@ -41,6 +44,7 @@ router.get('/callback', async (req, res) => {
     const storedState = req.cookies.auth_state;
     const codeVerifier = req.cookies.auth_verifier;
 
+    if (!storedState || !codeVerifier) return res.status(400).send('Missing PKCE verifier/state cookies.');
     if (!state || state !== storedState) return res.status(400).send('State mismatch.');
 
     try {
@@ -53,7 +57,9 @@ router.get('/callback', async (req, res) => {
         params.append('client_secret', process.env.NAVIGRAPH_CLIENT_SECRET);
         params.append('code_verifier', codeVerifier);
 
-        const response = await axios.post('https://identity.navigraph.com/connect/token', params);
+        const response = await axios.post('https://identity.navigraph.com/connect/token', params, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
         const { access_token, refresh_token, expires_in } = response.data;
 
         // 2. Save Tokens in Backend Database -> Get Session ID
@@ -61,7 +67,8 @@ router.get('/callback', async (req, res) => {
 
         // 3. Send ONLY Session ID to user
         // Max Age: 30 days (User stays logged in as long as we have their refresh token)
-        res.cookie('session_id', sessionId, { httpOnly: true, secure: true, maxAge: 30 * 24 * 60 * 60 * 1000 });
+        const sessionCookieOpts = { httpOnly: true, secure: cookieSecure, maxAge: 30 * 24 * 60 * 60 * 1000 };
+        res.cookie('session_id', sessionId, sessionCookieOpts);
 
         // Clean up temp auth cookies
         res.clearCookie('auth_verifier');
