@@ -1,0 +1,26 @@
+[
+  {
+    "icao": "MMMD",
+    "name": "Merida International",
+    "minLon": -90.05,
+    "minLat": 20.6,
+    "maxLon": -89.25,
+    "maxLat": 21.3
+  },
+  {
+    "icao": "EGLL",
+    "name": "London Heathrow",
+    "minLon": -0.7,
+    "minLat": 51.3,
+    "maxLon": 0.1,
+    "maxLat": 51.7
+  },
+  {
+    "icao": "EDDF",
+    "name": "Frankfurt",
+    "minLon": 8.4,
+    "minLat": 50.0,
+    "maxLon": 8.9,
+    "maxLat": 50.4
+  }
+]

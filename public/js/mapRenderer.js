@@ -4,22 +4,34 @@ import { activeAirports } from './config.js';
 import { FEET_TO_KM, NM_TO_KM, kmPerPixel, latLonToPixel } from './utils.js';
 
 // This module needs the nav data, which will be passed in from main.js
-let airports = [];
-let runways = [];
-let ilsData = [];
-let navDataPoints = [];
-let terminalWaypoints = [];
-let vorData = [];
-let approachPaths = [];
+export let airports = [];
+export let runways = [];
+export let ilsData = [];
+export let navDataPoints = [];
+export let terminalWaypoints = [];
+export let vorData = [];
+export let approachPaths = [];
+export let waypoints = []; // Consolidated list of all waypoint-like objects (enroute, terminal, VORs)
 
 export function setNavData(data) {
-    approachPaths = data.approachPaths;
-    airports = data.airports;
-    runways = data.runways;
-    ilsData = data.ilsData;
-    navDataPoints = data.navDataPoints;
-    terminalWaypoints = data.terminalWaypoints;
-    vorData = data.vorData;
+  airports = data.airports;
+  runways = data.runways;
+  ilsData = data.ilsData;
+  navDataPoints = data.navDataPoints;
+  terminalWaypoints = data.terminalWaypoints;
+  vorData = data.vorData;
+  approachPaths = data.approachPaths
+  // Build a consolidated waypoints array. Convert VORs into waypoint-like objects
+  // so callers can treat everything uniformly.
+  const convertedVors = (vorData || []).map(v => ({
+    name: v.id || v.name,
+    type: 'VOR',
+    lon: v.lon,
+    lat: v.lat,
+    _raw: v,
+    isVor: true
+  }));
+  waypoints = [ ...(navDataPoints || []), ...(terminalWaypoints || []), ...convertedVors ];
 }
 
 /**
@@ -37,7 +49,9 @@ function drawVorSymbol(ctx, x, y, size) {
     ctx.lineTo(x + size * Math.cos(angle), y + size * Math.sin(angle));
   }
   ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
-  ctx.lineWidth = 1.5;
+  // scale line width to logical canvas pixels
+  const scale = ctx.canvas.width / ctx.canvas.getBoundingClientRect().width;
+  ctx.lineWidth = 1.5 * scale;
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(x, y, 1.5, 0, 2 * Math.PI); // Center dot
@@ -52,9 +66,9 @@ function drawVorSymbol(ctx, x, y, size) {
  */
 function drawWaypointSymbol(ctx, point, navdataCanvas) {
   const { x, y } = latLonToPixel(point.lat, point.lon, navdataCanvas);
-
+  const scale = navdataCanvas.width / navdataCanvas.getBoundingClientRect().width;
   if (point.type[0] === 'C' || point.type[0] === 'R') {
-    const size = 6;
+    const size = 6 * scale;
     ctx.beginPath();
     ctx.moveTo(x, y - size * 0.75);
     ctx.lineTo(x - size * 0.6, y + size * 0.45);
@@ -62,7 +76,7 @@ function drawWaypointSymbol(ctx, point, navdataCanvas) {
     ctx.closePath();
     ctx.fill();
   } else if (point.type[0] === 'W') {
-    const size = 5;
+    const size = 5 * scale;
     const innerSize = size / 2.5;
     ctx.beginPath();
     ctx.moveTo(x, y - size);
@@ -78,7 +92,7 @@ function drawWaypointSymbol(ctx, point, navdataCanvas) {
   }
 
   if (!/\d/.test(point.name)) {
-    ctx.fillText(point.name, x + 8, y);
+    ctx.fillText(point.name, x + (8 * scale), y);
   }
 }
 
@@ -116,7 +130,8 @@ function drawAllRunways(ctx, navdataCanvas) {
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
       ctx.strokeStyle = "rgba(255, 255, 255, 1)";
-      ctx.lineWidth = 4;
+      const scale = navdataCanvas.width / navdataCanvas.getBoundingClientRect().width;
+      ctx.lineWidth = 4 * scale;
       ctx.stroke();
       drawnRunways.add(runway.id);
     }
@@ -190,7 +205,8 @@ function drawAllIls(ctx, navdataCanvas) {
       ctx.moveTo(threshold.x, threshold.y); // Start at the runway threshold.
       ctx.lineTo(endX, endY);               // Extend out along the approach course.
       ctx.strokeStyle = "rgba(255, 255, 0, 0.7)"; // Yellow for ILS
-      ctx.lineWidth = 3;
+      const scale = navdataCanvas.width / navdataCanvas.getBoundingClientRect().width;
+      ctx.lineWidth = 3 * scale;
       ctx.stroke();
     }
   });
@@ -201,8 +217,9 @@ function drawAllIls(ctx, navdataCanvas) {
  * @param {CanvasRenderingContext2D} ctx - The canvas rendering context.
  */
 function drawAllWaypoints(ctx, navdataCanvas) {
+  const scale = navdataCanvas.width / navdataCanvas.getBoundingClientRect().width;
   ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  ctx.font = '11px "Courier New"';
+  ctx.font = `800 ${11 * scale}px Google Sans Code`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   navDataPoints.forEach(point => drawWaypointSymbol(ctx, point, navdataCanvas));
@@ -218,21 +235,24 @@ function drawAllWaypoints(ctx, navdataCanvas) {
  * @param {CanvasRenderingContext2D} ctx - The canvas rendering context.
  */
 function drawAllVors(ctx, navdataCanvas) {
+  const scale = navdataCanvas.width / navdataCanvas.getBoundingClientRect().width;
   vorData.forEach(vor => {
-    const size = 5;
+    const size = 5 * scale;
     const { x, y } = latLonToPixel(vor.lat, vor.lon, navdataCanvas);
     drawVorSymbol(ctx, x, y, size);
-    ctx.fillText(vor.id, x + 8, y);
+    ctx.fillText(vor.id, x + (8 * scale), y);
     if (vor.type[1] === 'D') {
       const boxSize = size * 2.5;
       ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * scale;
       ctx.strokeRect(x - boxSize / 2, y - boxSize / 2, boxSize, boxSize);
     }
   });
 }
 
 export function drawNavData(navCtx, navdataCanvas) {
+  const rect = navdataCanvas.getBoundingClientRect();
+  // Clear logical canvas area
   navCtx.clearRect(0, 0, navdataCanvas.width, navdataCanvas.height);
   drawAllRunways(navCtx, navdataCanvas);
   drawAllIls(navCtx, navdataCanvas);

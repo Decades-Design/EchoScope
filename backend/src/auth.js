@@ -2,7 +2,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const axios = require('axios');
-const { createSession } = require('./session-store');
+const { createSession, getSession, updateSessionTokens } = require('./session-store');
+const { refreshNavigraphToken, validateFmsDataSubscription } = require('./token-helper');
 
 const router = express.Router();
 
@@ -82,3 +83,28 @@ router.get('/callback', async (req, res) => {
 });
 
 module.exports = router;
+
+// Status endpoint: verifies session cookie, refreshes tokens if needed,
+// and verifies FMS Data subscription. Returns JSON { authenticated: bool, subscription }
+router.get('/status', async (req, res) => {
+    const sessionId = req.cookies.session_id;
+    if (!sessionId) return res.status(401).json({ authenticated: false });
+
+    const session = await getSession(sessionId);
+    if (!session) return res.status(401).json({ authenticated: false });
+
+    let { access_token, refresh_token, expires_at } = session;
+
+    if (Date.now() > expires_at) {
+        // Try to refresh using stored refresh token
+        const newTokens = await refreshNavigraphToken(refresh_token);
+        if (!newTokens.success) return res.status(401).json({ authenticated: false });
+
+        await updateSessionTokens(sessionId, newTokens.access_token, newTokens.refresh_token, newTokens.expires_in);
+        access_token = newTokens.access_token;
+    }
+
+    const sub = await validateFmsDataSubscription(access_token);
+
+    return res.json({ authenticated: true, subscription: sub });
+});

@@ -13,10 +13,34 @@
   <body>
     <div id="game-container">
       <div id="canvas-stack">
-        <canvas id="navdata-canvas"></canvas>
-        <canvas id="radar-scope"></canvas>
+        <canvas id="navdata-canvas" width="2160" height="2160"></canvas>
+        <canvas id="radar-scope" width="2160" height="2160"></canvas>  
         
         <input type="number" id="tag-input" />
+        <input type="text" id="waypoint-input" />
+        <div id="waypoint-suggestions"></div>
+      </div>
+      <div id="procedures-panel" class="procedures-panel" style="display:none;">
+        <div class="procedures-header">
+          <h3 id="proc-plane-id">Procedure</h3>
+          <div id="proc-assigned">No procedure assigned</div>
+        </div>
+        <div id="proc-body">
+          <div class="proc-section">
+            <label>STARs (not implemented)</label>
+            <div id="star-list" class="proc-list">(No STARs)</div>
+          </div>
+          <div class="proc-section">
+            <label>Approaches</label>
+            <div id="approach-list" class="proc-list"></div>
+          </div>
+          <div class="proc-section">
+            <label>Transitions</label>
+            <div id="transition-list" class="proc-list">(Select an approach)</div>
+          </div>
+          <button id="assign-proc">Assign</button>
+          <button id="close-proc">Close</button>
+        </div>
       </div>
     </div>
 
@@ -33,5 +57,14 @@
         <a href="/api/auth/login" class="login-button">Login with Navigraph</a>
       </div>
     </div>
+    
+      <div id="airport-overlay">
+        <div id="airport-modal">
+          <h2 class="modal-title">Select Airport<span class="blinking-cursor">_</span></h2>
+          <p>Please choose an airport to load navigation data for the simulation.</p>
+          <div id="airport-list"></div>
+          <button id="airport-select-btn">Load Selected Airport</button>
+        </div>
+      </div>
   </body>
 </html>

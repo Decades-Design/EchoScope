@@ -1,53 +1,95 @@
 // In js/navDatabase.js
 
+import { minLon, maxLon, minLat, maxLat } from './utils.js';
 import { setNavData, drawNavData } from './mapRenderer.js';
 
 export async function loadNavData(navCtx, navdataCanvas) {
-  console.log("Requesting Navigraph data URL...");
+  console.log('Requesting navigation data from backend...');
+
+  // Build common query params for spatial queries
+  const params = new URLSearchParams({
+    minLon: String(minLon),
+    maxLon: String(maxLon),
+    minLat: String(minLat),
+    maxLat: String(maxLat),
+  });
+
+  const fetchOpts = { credentials: 'same-origin' };
 
   try {
-    // Step 1: Request the download URL from our new single backend endpoint.
-    const urlResponse = await fetch('../../api/NavData/get-navdata-url.js');
-    
-    if (urlResponse.status === 401) {
-        console.log("Not authenticated. Redirecting to login.");
+    // Fetch primary datasets in parallel
+    const [navRes, airportsRes, vorsRes, termWpRes, runwaysRes, ilsRes] = await Promise.all([
+      fetch(`/api/data/navpoints?${params.toString()}`, fetchOpts),
+      fetch(`/api/data/airports?${params.toString()}`, fetchOpts),
+      fetch(`/api/data/vors?${params.toString()}`, fetchOpts),
+      fetch(`/api/data/terminalWaypoints?${params.toString()}`, fetchOpts),
+      fetch(`/api/data/runways?${params.toString()}`, fetchOpts),
+      fetch(`/api/data/ils?${params.toString()}`, fetchOpts),
+    ]);
+
+    // Handle auth/subscription errors uniformly
+    const responses = [navRes, airportsRes, vorsRes, termWpRes, runwaysRes, ilsRes];
+    for (const r of responses) {
+      if (r.status === 401) {
+        console.log('Not authenticated. Redirecting to login.');
         window.location.href = '/api/auth/login';
         return;
-    }
-    if (urlResponse.status === 403) {
-        throw new Error('User does not have an active subscription.');
-    }
-    if (!urlResponse.ok) {
-        throw new Error('Failed to get download URL from backend.');
+      }
+      if (r.status === 403) {
+        throw new Error('User does not have an active FMS Data subscription.');
+      }
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`Backend error: ${r.status} ${text}`);
+      }
     }
 
-    const { download_url } = await urlResponse.json();
-    console.log(`Download URL received successfully.`);
+    const [navPoints, airports, vors, terminalWaypoints, runways, ils] = await Promise.all(
+      responses.map(r => r.json())
+    );
 
-    // Step 2: Fetch the database file from the signed URL.
-    const dbResponse = await fetch(download_url);
-    if (!dbResponse.ok) throw new Error('Failed to download the data file.');
-    
-    // --- IMPORTANT: Handling the JSON Data ---
-    // The file is a zip archive. We need to handle that now instead of a direct SQLite file.
-    // This will require a library like JSZip. You would add it to your index.html.
-    
-    console.log("Data file (zip) downloaded.");
-    // const blob = await dbResponse.blob();
-    // const jszip = new JSZip();
-    // const zip = await jszip.loadAsync(blob);
-    //
-    // const airportsText = await zip.file("airports.json").async("string");
-    // const airports = JSON.parse(airportsText);
-    //
-    // console.log("Airports loaded from JSON:", airports);
+    // Request approachPaths based on airports' ICAOs
+    let approachPaths = [];
+    try {
+      const icaoList = airports.map(a => a.icao).filter(Boolean);
+      if (icaoList.length) {
+        const apParams = new URLSearchParams();
+        apParams.set('airports', icaoList.join(','));
+        const apRes = await fetch(`/api/data/approachPaths?${apParams.toString()}`, fetchOpts);
+        if (apRes.status === 401) { window.location.href = '/api/auth/login'; return; }
+        if (apRes.ok) approachPaths = await apRes.json();
+      }
+    } catch (e) {
+      console.warn('Failed to load approach paths:', e);
+    }
 
-    // Your existing SQL.js logic would be replaced with parsing for each JSON file you need.
-    // For now, we'll stop here to confirm the download works.
-    console.log("Data loading process complete.");
+    const navData = {
+      navDataPoints: navPoints,
+      airports: airports,
+      vorData: vors,
+      terminalWaypoints: terminalWaypoints,
+      runways: runways,
+      ilsData: ils,
+      approachPaths: approachPaths,
+    };
+
+    setNavData(navData);
+    drawNavData(navCtx, navdataCanvas);
+    console.log('Navigation data loaded and rendered.');
+
+    return navData;
 
   } catch (err) {
-    console.error("Failed to load Navigraph data:", err);
-    // Display an error to the user on the canvas
+    console.error('Failed to load navigation data:', err);
+    // Optionally render an error state on the canvas
+    return {
+      navDataPoints: [],
+      airports: [],
+      vorData: [],
+      terminalWaypoints: [],
+      runways: [],
+      ilsData: [],
+      approachPaths: []
+    };
   }
 }

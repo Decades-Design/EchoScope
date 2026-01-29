@@ -1,16 +1,15 @@
-// CORE SIMULATION CONFIGURATION
-export const centerCoord = { lat: 45.44944444, lon: 9.27833333 };
+// MERIDA INTERNATIONAL AIRPORT CONFIGURATION
+export const centerCoord = { lat: 20.93702222, lon: -89.65769444 };
 export const radarRangeNM = 30;
 
 export const activeAirports = {
-  "LIML": ["RW35"],
-  "LIMC": ["RW35R"]
+  "MMMD": ["RW10"],
 };
 
 export const SWEEP_INTERVAL_MS = 2000;
 
-export let windDirection = 270; // Wind from 240 degrees
-export let windSpeed = 50;      // 15 knots
+export let windDirection = 270;
+export let windSpeed = 30; // in knots
 
 // AIRCRAFT PERFORMANCE
 export const AIRCRAFT_PERFORMANCE  = {
