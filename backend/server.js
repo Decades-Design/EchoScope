@@ -8,7 +8,7 @@ const path = require('path');
 
 const authRoutes = require('./src/auth');
 const { updateNavData } = require('./src/navdata-manager');
-const { initSessionStore, getSession, updateSessionTokens } = require('./src/session-store');
+const { initSessionStore, getSession, updateSessionTokens, cleanupExpiredSessions } = require('./src/session-store');
 const { validateFmsDataSubscription, refreshNavigraphToken } = require('./src/token-helper');
 
 const app = express();
@@ -194,5 +194,15 @@ app.get('/api/data/:type', handleDataRequest);
     // Schedule Cron: Run at 02:00 AM every day
     cron.schedule('0 2 * * *', () => {
         updateNavData();
+    });
+
+    cron.schedule('0 3 * * *', async () => {
+        console.log('[Maintenance] Cleaning up expired sessions...');
+        try {
+            const count = await cleanupExpiredSessions();
+            console.log(`[Maintenance] Cleanup complete. Removed ${count} expired sessions.`);
+        } catch (err) {
+            console.error('[Maintenance] Cleanup failed:', err.message);
+        }
     });
 })();

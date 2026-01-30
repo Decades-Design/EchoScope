@@ -64,4 +64,21 @@ async function deleteSession(session_id) {
     await db.run('DELETE FROM sessions WHERE session_id = ?', session_id);
 }
 
-module.exports = { initSessionStore, createSession, getSession, updateSessionTokens, deleteSession };
+/**
+ * Deletes all sessions where the 'expires_at' timestamp is in the past.
+ * Returns the number of deleted rows.
+ */
+async function cleanupExpiredSessions() {
+    const now = Date.now();
+    
+    // Run the DELETE query
+    const result = await db.run('DELETE FROM sessions WHERE expires_at < ?', now);
+    
+    // Optional: Run VACUUM to actually reclaim the disk space from the file system
+    // (SQLite doesn't shrink the file size automatically without this)
+    await db.run('VACUUM');
+    
+    return result.changes; // Returns count of deleted rows
+}
+
+module.exports = { initSessionStore, createSession, getSession, updateSessionTokens, deleteSession, cleanupExpiredSessions };
