@@ -11,6 +11,17 @@ import { showProceduresPanel, hideProceduresPanel, getHoveredProcedure, buildPro
 
 
 
+// Resolve API base depending on environment (localhost -> backend on port 3000)
+const API_BASE = (() => {
+    const host = window.location.hostname;
+    // If running locally, send requests to the server IP (match vercel.json)
+    if (host === 'localhost' || host === '127.0.0.1') {
+        return 'http://92.4.166.252:3000';
+    }
+    // In non-local environments, use relative paths so Vercel rewrites handle routing
+    return '';
+})();
+
 // UI & CANVAS GLOBALS
 const canvas = document.getElementById("radar-scope");
 const ctx = canvas.getContext("2d");
@@ -382,7 +393,7 @@ async function initialize() {
     const loginOverlay = document.getElementById('login-overlay');
     async function checkSession() {
         try {
-            const resp = await fetch('/api/auth/status', { credentials: 'include' });
+            const resp = await fetch(`${API_BASE}/api/auth/status`, { credentials: 'include' });
             if (!resp.ok) return false;
             const data = await resp.json();
             return !!data.authenticated;
@@ -393,7 +404,7 @@ async function initialize() {
 
     const authenticated = await checkSession();
     if (!authenticated) {
-        if (loginOverlay) loginOverlay.style.display = 'block';
+        if (loginOverlay) loginOverlay.style.display = 'flex';
         return; // Stop initialization until user logs in
     }
     if (loginOverlay) loginOverlay.style.display = 'none';

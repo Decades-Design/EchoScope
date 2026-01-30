@@ -50,11 +50,11 @@
       <div id="login-modal">
         <h2 class="modal-title">Authentication Required<span class="blinking-cursor">_</span></h2>
         <p>
-          This Air Traffic Control simulation requires a valid Navigraph
-          subscription to access navigation data.
+          Our navigation data used to provide you with a realistic experience is provided by Navigraph. To access the data, you need to log in with your Navigraph account.
         </p>
         <p>Please log in to continue.</p>
-        <a href="/api/auth/login" class="login-button">Login with Navigraph</a>
+        <p class="auth-plan-note"><strong>Note:</strong> Accounts on the free plan will use an older AIRAC cycle. Users with active subscriptions will receive the latest AIRAC cycle.</p>
+        <button id="login-button" class="login-button" type="button">Login with Navigraph</button>
       </div>
     </div>
     
@@ -67,4 +67,20 @@
         </div>
       </div>
   </body>
+  <script>
+    // Resolve correct auth URL for local development vs production (Vercel)
+    (function() {
+      const btn = document.getElementById('login-button');
+      if (!btn) return;
+
+      // If running locally, send auth requests to the server IP; otherwise let Vercel handle /api
+      const SERVER_IP = 'http://92.4.166.252:3000';
+      const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      let authUrl = isLocal ? `${SERVER_IP}/api/auth/login` : '/api/auth/login';
+
+      btn.addEventListener('click', () => {
+        window.location.href = authUrl;
+      });
+    })();
+  </script>
 </html>

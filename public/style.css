@@ -232,10 +232,9 @@ button:hover {
 #login-overlay {
   position: fixed;
   inset: 0;
-  display: none; /* shown by JS when needed */
+  display: none; /* shown by JS when needed (JS will set to 'flex' to center content) */
   background: rgba(0,0,0,0.7);
   z-index: 200;
-  display: flex;
   align-items: center;
   justify-content: center;
 }
@@ -251,9 +250,49 @@ button:hover {
 }
 
 /* Airport overlay uses same visual style as login */
-#airport-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 210; display: flex; align-items: center; justify-content: center; }
-#airport-modal { background-color: var(--bg-panel); color: var(--text-active); padding: 18px; border: 1px solid var(--border-active); width: 420px; max-width: 95vw; text-align: left; }
-#airport-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border-active); padding: 8px; margin: 8px 0; }
-.airport-item { padding: 8px; cursor: pointer; border-radius: 4px; }
-.airport-item:hover { background: var(--bg-highlight); }
-.airport-item.selected { background: var(--border-scope); color: var(--text-inverse); }
+#airport-overlay {
+  display: none; /* shown by JS when needed (JS will set to 'flex') */
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 210;
+  align-items: center;
+  justify-content: center;
+}
+#airport-modal {
+  background-color: var(--bg-panel);
+  color: var(--text-active);
+  padding: 18px;
+  border: 1px solid var(--border-active);
+  width: 420px;
+  max-width: 95vw;
+  text-align: left;
+}
+#airport-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-active);
+  padding: 8px;
+  margin: 8px 0;
+}
+.airport-item {
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.airport-item:hover {
+  background: var(--bg-highlight);
+}
+.airport-item.selected {
+  background: var(--border-scope);
+  color: var(--text-inverse);
+}
+
+/* Small explanatory note inside auth modal */
+.auth-plan-note {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 8px;
+  line-height: 1.2;
+  text-align: left;
+}
